@@ -119,7 +119,8 @@ public:
 		renderHighway(egoVelocity*timestamp/1e6, viewer);
 		egoCar.render(viewer);
 		
-		for (int i = 0; i < traffic.size(); i++)
+		//for (int i = 0; i < traffic.size(); i++)
+		for (int i = 0; i < 1; i++)
 		{
 			traffic[i].move((double)1/frame_per_sec, timestamp);
 			if(!visualize_pcd)
@@ -131,7 +132,29 @@ public:
 				gt << traffic[i].position.x, traffic[i].position.y, traffic[i].velocity*cos(traffic[i].angle), traffic[i].velocity*sin(traffic[i].angle);
 				tools.ground_truth.push_back(gt);
 				tools.lidarSense(traffic[i], viewer, timestamp, visualize_lidar);
+
+				if(i==0)
+				{
+					std::cout << "-------------------- After tools.lidarSense(): timestamp = " << timestamp << std::endl;
+					std::cout << "x = " << traffic[i].ukf.x_(0);
+					std::cout << ", y = " << traffic[i].ukf.x_(1);
+					std::cout << ", v = " << traffic[i].ukf.x_(2);
+					std::cout << ", yaw = " << traffic[i].ukf.x_(3) << std::endl;
+					std::cout << "P = " << traffic[i].ukf.P_ << std::endl;
+				}
+
 				tools.radarSense(traffic[i], egoCar, viewer, timestamp, visualize_radar);
+
+				if(i==0)
+				{
+					std::cout << "-------------------- After tools.radarSense(): timestamp = " << timestamp << std::endl;
+					std::cout << "x = " << traffic[i].ukf.x_(0);
+					std::cout << ", y = " << traffic[i].ukf.x_(1);
+					std::cout << ", v = " << traffic[i].ukf.x_(2);
+					std::cout << ", yaw = " << traffic[i].ukf.x_(3) << std::endl;
+					std::cout << "P = " << traffic[i].ukf.P_ << std::endl;
+				}
+
 				tools.ukfResults(traffic[i],viewer, projectedTime, projectedSteps);
 
 				VectorXd estimate(4);
@@ -140,8 +163,7 @@ public:
     			double v1  = cos(yaw)*v;
     			double v2  = sin(yaw)*v;
 				estimate << traffic[i].ukf.x_[0], traffic[i].ukf.x_[1], v1, v2;
-				tools.estimations.push_back(estimate);
-	
+				tools.estimations.push_back(estimate);	
 			}
 		}
 		viewer->addText("Accuracy - RMSE:", 30, 300, 20, 1, 1, 1, "rmse");
