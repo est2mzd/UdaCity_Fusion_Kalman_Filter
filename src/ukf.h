@@ -206,6 +206,9 @@ public:
 
   // Sigma point spreading parameter
   double lambda_;
+
+  MatrixXd R_for_Lidar;
+  MatrixXd R_for_Radar;
 };
 
 #endif // UKF_H

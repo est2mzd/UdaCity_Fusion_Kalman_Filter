@@ -22,6 +22,12 @@ UKF::UKF() {
   // initial covariance matrix
   P_ = MatrixXd(5, 5);
 
+  // Process noise standard deviation longitudinal acceleration in m/s^2
+  std_a_ = 3;
+
+  // Process noise standard deviation yaw acceleration in rad/s^2
+  std_yawdd_ = 2;
+
   /**  -------------------------------------------
    * DO NOT MODIFY measurement noise values below.
    * These are provided by the sensor manufacturer.
@@ -51,14 +57,7 @@ UKF::UKF() {
    * TODO: Complete the initialization. See ukf.h for other member properties.
    * Hint: one or more values initialized above might be wildly off...
    */
-  // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 3;
 
-  // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 2;
-  
-
-  //time_us_        = 0.0;
   is_initialized_ = false;
   n_x_            = 5; // State Dimension
   n_aug_          = 7; // Augumented State Dimension  
@@ -68,6 +67,17 @@ UKF::UKF() {
   weights_.fill(0.5 / (lambda_ + n_aug_));
   weights_(0) = lambda_ / (lambda_ + n_aug_);
   
+  R_for_Lidar = MatrixXd(2, 2);
+  R_for_Lidar.fill(0.0);
+  R_for_Lidar(0,0) = std_laspx_*std_laspx_;
+  R_for_Lidar(1,1) = std_laspy_*std_laspy_;
+
+  R_for_Radar = MatrixXd(3, 3);
+  R_for_Radar.fill(0.0);    
+  R_for_Radar(0,0) = std_radr_*std_radr_;
+  R_for_Radar(1,1) = std_radphi_*std_radphi_;
+  R_for_Radar(2,2) = std_radrd_*std_radrd_;
+
   x_.fill(0.0);
   P_.fill(0.0);
 
@@ -97,15 +107,19 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
   //-------- Step-1: Predict with a CTRV (=Constant Turn Rate Velocity) Model --------//
   double delta_t = (meas_package.timestamp_ - time_us_) / 1.0e+6; // sec
-  //if(meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER)
-  //{
-    Prediction(delta_t);
-  //}
-
+  time_us_       = meas_package.timestamp_;
+  Prediction(delta_t);
+    
   //-------- Step-2: Measurement Update --------//
-  UpdateLidar(meas_package);
-  UpdateRadar(meas_package);
-  //std::cout << "End : ProcessMeasurement()" << std::endl;
+  if(meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER && use_laser_)
+  {
+    UpdateLidar(meas_package);
+  }
+
+  if(meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR && use_radar_)
+  {
+    UpdateRadar(meas_package);
+  }  
 }
 
 
@@ -113,7 +127,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
 
 void UKF::InitializeState(MeasurementPackage meas_package) 
 {
-  //std::cout << "---------- Start: InitializeState" << std::endl;
   //---- Lidar
   if(meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER)
   {
@@ -124,9 +137,9 @@ void UKF::InitializeState(MeasurementPackage meas_package)
     x_(1) = meas_package.raw_measurements_(1); // py
 
     P_.fill(0.0);
-    P_(0,0) = 1.0;//std_laspx_*std_laspx_;
-    P_(1,1) = 1.0;//std_laspy_*std_laspy_;
-    P_(2,2) = P_(3,3) = P_(4,4) = 0.5;//1.0;
+    P_(0,0) = std_laspx_*std_laspx_;
+    P_(1,1) = std_laspy_*std_laspy_;   
+    P_(2,2) = P_(3,3) = P_(4,4) = 1.0;
   }
   
   //---- Radar
@@ -134,7 +147,6 @@ void UKF::InitializeState(MeasurementPackage meas_package)
   {
     // raw_measurements_ = marker.rho, marker.phi, marker.rho_dot;
     // x_ = [pos1 pos2 vel_abs yaw_angle yaw_rate]
-    
     double rho  = meas_package.raw_measurements_(0);
     double phi  = meas_package.raw_measurements_(1);
     double rhod = meas_package.raw_measurements_(2);
@@ -147,21 +159,16 @@ void UKF::InitializeState(MeasurementPackage meas_package)
     x_(4) = 0.0; // yawd
 
     P_.fill(0.0);
-    P_(0,0) = 1.0;//std_radr_ *std_radr_;
-    P_(1,1) = 1.0;//std_radrd_*std_radrd_;
-    P_(2,2) = 0.5;//std_radrd_*std_radrd_;
-    P_(3,3) = 0.5;//std_radphi_;
-    P_(4,4) = 0.5;//std_radphi_;
+    
+    P_(0,0) = std_radr_ *std_radr_;
+    P_(1,1) = std_radrd_*std_radrd_;
+    P_(2,2) = std_radrd_*std_radrd_;
+    P_(3,3) = std_radphi_;
+    P_(4,4) = std_radphi_;
   }
-  
-  std::cout << "----------- Initilization ------------" << std::endl;
-  std::cout << "x_" << std::endl << x_ << std::endl;
-  std::cout << "P_" << std::endl << P_ << std::endl;
 
   is_initialized_ = true;
   time_us_ = meas_package.timestamp_;        // us
-
-  //std::cout << "---------- End: InitializeState" << std::endl;
 }
 
 
@@ -295,11 +302,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the lidar NIS, if desired.
    */
-  if(meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER && use_laser_)
-  {
-    //std::cout << "=================== LASER ==================== " << std::endl;
-    UpdateCommon(meas_package);
-  }
+    UpdateCommon(meas_package);  
 }
 
 
@@ -312,11 +315,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
    * covariance, P_.
    * You can also calculate the radar NIS, if desired.
    */
-  if(meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR && use_radar_)
-  {
-    //std::cout << "=================== RADAR ==================== " << std::endl;
     UpdateCommon(meas_package);
-  }
 }
 
 
@@ -326,36 +325,22 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 void UKF::UpdateCommon(MeasurementPackage meas_package)
 {
   // Step-2-1 : Transform sigma points into measurement space
-  //std::cout << " ---------- Step-2-1 ---------- SensorType= " << meas_package.sensor_type_ << std::endl;
   MatrixXd z_sig_meas = TransformSigmaPointsFromPredictionToMeasurementSpace(meas_package.sensor_type_);
-  //std::cout << "z_sig_meas = " << std::endl << z_sig_meas << std::endl;
 
   // Step-2-2: Calculate mean predicted measurement
-  //std::cout << " ---------- Step-2-2 ---------- SensorType= " << meas_package.sensor_type_ << std::endl;
   VectorXd z_sig_meas_mean = CalculateMeanPredictedMeasurement(z_sig_meas);
-  //std::cout << "z_sig_meas_mean = " << std::endl << z_sig_meas_mean << std::endl;
 
   // Step-2-3 : Calculate innovation covariance matrix S
-  //std::cout << " ---------- Step-2-3 ---------- SensorType= " << meas_package.sensor_type_ << std::endl;
   MatrixXd S = CalculateInnovationCovarianceMatrix(z_sig_meas, z_sig_meas_mean, meas_package.sensor_type_);
-  //std::cout << "S = " << std::endl << S << std::endl;
 
   // Step-2-4: Calculate cross correlation matrix
-  //std::cout << " ---------- Step-2-4 ---------- SensorType= " << meas_package.sensor_type_ << std::endl;
   MatrixXd Tc = CalculateCrossCorrelationMatrix(z_sig_meas, z_sig_meas_mean, meas_package.sensor_type_);
-  //std::cout << "Tc = " << std::endl << Tc << std::endl;
 
   // Step-2-5: Calculate Kalman gain K
-  //std::cout << " ---------- Step-2-5 ---------- SensorType= " << meas_package.sensor_type_ << std::endl;
   MatrixXd K = CalculateKalmanGain(Tc,S);
-  //std::cout << "K = " << std::endl << K << std::endl;
 
   // Step-2-6: Update state mean and covariance matrix
-  //std::cout << " ---------- Step-2-6 ---------- SensorType= " << meas_package.sensor_type_ << std::endl;
   UpdateStateMeanAndCovarianceMatrix(meas_package, z_sig_meas_mean, K, S);
-
-  //std::cout << "x_ = " << std::endl << x_ << std::endl;
-  //std::cout << "P_ = " << std::endl << P_ << std::endl;
 }
 
 //===========================================================//
@@ -363,7 +348,7 @@ void UKF::UpdateCommon(MeasurementPackage meas_package)
 MatrixXd UKF::TransformSigmaPointsFromPredictionToMeasurementSpace(MeasurementPackage::SensorType sensor_type)
 {
   int n_z = GetStateDegreeOfFreedom(sensor_type); // Get DOF
-  MatrixXd z_sig_meas(n_z, 1+2*n_aug_);
+  MatrixXd z_sig_meas = MatrixXd(n_z, 1+2*n_aug_);
   z_sig_meas.fill(0.0);
 
   if(sensor_type == MeasurementPackage::SensorType::LASER)
@@ -406,7 +391,7 @@ MatrixXd UKF::TransformSigmaPointsFromPredictionToMeasurementSpace(MeasurementPa
 VectorXd UKF::CalculateMeanPredictedMeasurement(MatrixXd z_sig_meas)
 {
   int n_z = z_sig_meas.rows();
-  VectorXd z_sig_meas_mean(n_z);
+  VectorXd z_sig_meas_mean = VectorXd(n_z);
   z_sig_meas_mean.fill(0);
 
   for(int col=0; col < z_sig_meas.cols(); ++col)
@@ -421,12 +406,10 @@ VectorXd UKF::CalculateMeanPredictedMeasurement(MatrixXd z_sig_meas)
 
 MatrixXd UKF::CalculateInnovationCovarianceMatrix(MatrixXd z_sig_meas, VectorXd z_sig_meas_mean, MeasurementPackage::SensorType sensor_type)
 {
-  //std::cout << "   A " << std::endl;
   int n_z = GetStateDegreeOfFreedom(sensor_type);
   MatrixXd S = MatrixXd(n_z, n_z);
   S.fill(0.0);
 
-  //std::cout << "   B " << std::endl;
   for(int col=0; col < z_sig_meas.cols(); ++col)
   {
     VectorXd diff_z = z_sig_meas.col(col) - z_sig_meas_mean;
@@ -439,24 +422,16 @@ MatrixXd UKF::CalculateInnovationCovarianceMatrix(MatrixXd z_sig_meas, VectorXd 
     S += weights_(col) * diff_z * diff_z.transpose();
   }
 
-  //std::cout << "   C " << std::endl;
-  MatrixXd R = MatrixXd(n_z, n_z);
-  R.fill(0.0);
 
   if(sensor_type == MeasurementPackage::SensorType::LASER) // Lidar
   {
-    R(0,0) = std_laspx_*std_laspx_;
-    R(1,1) = std_laspy_*std_laspy_;
+    S += R_for_Lidar;
   }
   else // Radar
   {
-    R(0,0) = std_radr_*std_radr_;
-    R(1,1) = std_radphi_*std_radphi_;
-    R(2,2) = std_radrd_*std_radrd_;
+    S += R_for_Radar;
   }
-
-  //std::cout << "   D " << std::endl;
-  S += R;
+  
   return S;
 }
 
@@ -468,6 +443,7 @@ MatrixXd UKF::CalculateCrossCorrelationMatrix(MatrixXd z_sig_meas, VectorXd z_si
 {
   int n_z = GetStateDegreeOfFreedom(sensor_type);
   MatrixXd Tc = MatrixXd(n_x_, n_z);
+  Tc.fill(0.0);
 
   for(int col = 0; col < z_sig_meas.cols(); ++col)
   {
@@ -507,20 +483,15 @@ void UKF::UpdateStateMeanAndCovarianceMatrix(MeasurementPackage meas_package, Ve
     z_meas(i) = meas_package.raw_measurements_(i);
   }
 
-  //std::cout << "   C " << std::endl;
   VectorXd diff_z = z_meas - z_sig_meas_mean;
 
-  //std::cout << "   D " << std::endl;
   if(meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR)
   {
     diff_z(1) = ModifyAngle(diff_z(1));
   }
 
-  //std::cout << "   E " << std::endl;
   x_ += K * diff_z;
-  //std::cout << "   F " << std::endl;
   P_ -= K * S * K.transpose();
-  //std::cout << "   G " << std::endl;
 }
 
 

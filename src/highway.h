@@ -119,8 +119,8 @@ public:
 		renderHighway(egoVelocity*timestamp/1e6, viewer);
 		egoCar.render(viewer);
 		
-		//for (int i = 0; i < traffic.size(); i++)
-		for (int i = 0; i < 1; i++)
+		for (int i = 0; i < traffic.size(); i++)
+		//for (int i = 0; i < 1; i++)
 		{
 			traffic[i].move((double)1/frame_per_sec, timestamp);
 			if(!visualize_pcd)
@@ -133,6 +133,7 @@ public:
 				tools.ground_truth.push_back(gt);
 				tools.lidarSense(traffic[i], viewer, timestamp, visualize_lidar);
 
+				/*
 				if(i==0)
 				{
 					std::cout << "-------------------- After tools.lidarSense(): timestamp = " << timestamp << std::endl;
@@ -142,9 +143,10 @@ public:
 					std::cout << ", yaw = " << traffic[i].ukf.x_(3) << std::endl;
 					std::cout << "P = " << traffic[i].ukf.P_ << std::endl;
 				}
-
+				*/
 				tools.radarSense(traffic[i], egoCar, viewer, timestamp, visualize_radar);
 
+				/*
 				if(i==0)
 				{
 					std::cout << "-------------------- After tools.radarSense(): timestamp = " << timestamp << std::endl;
@@ -154,6 +156,7 @@ public:
 					std::cout << ", yaw = " << traffic[i].ukf.x_(3) << std::endl;
 					std::cout << "P = " << traffic[i].ukf.P_ << std::endl;
 				}
+				*/
 
 				tools.ukfResults(traffic[i],viewer, projectedTime, projectedSteps);
 
